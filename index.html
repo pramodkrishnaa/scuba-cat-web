@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scuba Cat 🐱</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Scuba Cat 🐱</h1>
+  <p class="intro">
+    Put your <strong>left hand near your face</strong> and scoop your
+    <strong>right hand</strong> like you're paddling. Hold it a moment.
+  </p>
+
+  <div class="stage-wrap">
+    <div class="stage">
+      <video id="webcam" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="stage meme-pane">
+      <video id="meme-video" playsinline muted src="assets/scuba_cat.mp4"></video>
+      <p id="meme-placeholder" class="meme-placeholder">Do the gesture to summon 🐱</p>
+    </div>
+  </div>
+
+  <p id="status">Loading hand tracker…</p>
+  <p id="debug" class="debug"></p>
+
+  <button id="test-btn">Test it 🐱</button>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
