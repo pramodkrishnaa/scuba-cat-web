@@ -4,7 +4,7 @@ A browser toy: open it, and once your webcam loads, scoop your right hand like
 you're paddling with your left hand near your face — a cat in a diving mask
 pops in right next to you, live, and disappears the moment you stop.
 
-**[Live demo](#)** — _link filled in after deploy_
+**[Live demo](https://scuba-cat-web.vercel.app)**
 
 ## How it works
 
