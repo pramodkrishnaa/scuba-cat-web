@@ -8,8 +8,25 @@ body {
   min-height: 100vh;
   display: flex;
   justify-content: center;
+  align-items: center;
   background: #0f1420;
   color: #eef1f8;
+}
+
+#splash {
+  text-align: center;
+  padding: 2rem;
+}
+
+#splash h1 {
+  font-size: 2.25rem;
+  margin: 0 0 0.5rem;
+}
+
+#splash p {
+  color: #a6adc2;
+  font-size: 1.1rem;
+  margin: 0;
 }
 
 main {
@@ -19,19 +36,10 @@ main {
   text-align: center;
 }
 
-h1 {
-  margin: 0 0 0.25rem;
-  font-size: 2rem;
-}
-
-.intro {
-  color: #a6adc2;
-  margin: 0 0 1.5rem;
-}
-
 .stage-wrap {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.75rem;
 }
 
@@ -40,12 +48,11 @@ h1 {
   flex: 1 1 280px;
   aspect-ratio: 4 / 3;
   background: #000;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
 }
 
-#webcam,
-#overlay {
+#webcam {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -61,46 +68,30 @@ h1 {
   object-fit: cover;
 }
 
-.meme-placeholder {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 1rem;
-  color: #6b7280;
-  text-align: center;
+.meme-pane {
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.2s ease, transform 0.2s ease;
   pointer-events: none;
 }
 
-.meme-pane.playing .meme-placeholder {
-  display: none;
-}
-
-#status {
-  font-size: 1.1rem;
-  margin: 1rem 0 0.25rem;
-}
-
-.debug {
-  color: #6b7280;
-  font-size: 0.85rem;
-  min-height: 1.2em;
+.meme-pane.active {
+  opacity: 1;
+  transform: scale(1);
 }
 
 #test-btn {
-  margin-top: 1rem;
-  padding: 0.65rem 1.5rem;
-  font-size: 1rem;
-  border: none;
+  margin-top: 1.5rem;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  border: 1px solid #2a3148;
   border-radius: 999px;
-  background: #4f7cff;
-  color: white;
+  background: transparent;
+  color: #6b7280;
   cursor: pointer;
 }
 
 #test-btn:hover {
-  background: #3d66e0;
+  color: #eef1f8;
+  border-color: #4f7cff;
 }
-

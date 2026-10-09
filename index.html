@@ -7,28 +7,21 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main>
+<div id="splash">
   <h1>Scuba Cat 🐱</h1>
-  <p class="intro">
-    Put your <strong>left hand near your face</strong> and scoop your
-    <strong>right hand</strong> like you're paddling. Hold it a moment.
-  </p>
+  <p id="splash-text">Let's get ready to dance...</p>
+</div>
 
+<main id="app" hidden>
   <div class="stage-wrap">
-    <div class="stage">
+    <div class="stage" id="cam-stage">
       <video id="webcam" autoplay playsinline muted></video>
-      <canvas id="overlay"></canvas>
     </div>
-    <div class="stage meme-pane">
-      <video id="meme-video" playsinline muted src="assets/scuba_cat.mp4"></video>
-      <p id="meme-placeholder" class="meme-placeholder">Do the gesture to summon 🐱</p>
+    <div class="stage meme-pane" id="meme-pane">
+      <video id="meme-video" playsinline muted loop src="assets/scuba_cat.mp4"></video>
     </div>
   </div>
-
-  <p id="status">Loading hand tracker…</p>
-  <p id="debug" class="debug"></p>
-
-  <button id="test-btn">Test it 🐱</button>
+  <button id="test-btn">no camera? tap here</button>
 </main>
 
 <script type="module" src="app.js"></script>

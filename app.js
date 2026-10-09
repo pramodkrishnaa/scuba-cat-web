@@ -3,35 +3,51 @@ import {
   FilesetResolver,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
-// Tunables — keep README pointing here instead of hardcoding these numbers in prose.
-const HOLD_DURATION_MS = 300;
-const COOLDOWN_MS = 2500;
-const SCOOP_WINDOW_MS = 500;
-const SCOOP_DISTANCE_THRESHOLD = 0.18; // summed normalized wrist displacement over the window
-const FACE_ZONE = { xMin: 0.3, xMax: 0.7, yMin: 0.0, yMax: 0.45 };
+// Tunables.
+const START_GRACE_MS = 100; // gesture must hold this long before the cat appears, filters single-frame noise
+const STOP_GRACE_MS = 250; // gesture must be absent this long before the cat disappears, filters flicker
+const MANUAL_ACTIVE_MS = 3000; // how long the fallback button fakes an active gesture
+const SCOOP_WINDOW_MS = 600;
+const SCOOP_DISTANCE_THRESHOLD = 0.15; // summed normalized wrist displacement over the window
+const SCOOP_REVERSAL_EPSILON = 0.004; // minimum per-frame y-change counted toward a direction reversal
+const FACE_ZONE = { xMin: 0.25, xMax: 0.75, yMin: 0.0, yMax: 0.5 };
 
+// MediaPipe's legacy Hands solution assumes a MIRRORED (selfie-style) input
+// image for handedness labels; it's unconfirmed whether the newer Tasks Vision
+// HandLandmarker used here carries the same assumption against a raw, unflipped
+// frame. If the cat never appears for real gestures, try swapping these two —
+// that's the single most likely culprit. Named here instead of inline so it's
+// a one-line experiment, not a hunt through the detection logic.
+const ACTUAL_LEFT_HAND_LABEL = "Left";
+const ACTUAL_RIGHT_HAND_LABEL = "Right";
+
+const DEBUG = new URLSearchParams(location.search).has("debug");
+const debugEl = DEBUG ? document.createElement("pre") : null;
+if (debugEl) {
+  debugEl.style.cssText =
+    "position:fixed;top:0;left:0;background:#000c;color:#0f0;font-size:12px;padding:8px;z-index:999;margin:0;";
+  document.body.appendChild(debugEl);
+}
+
+const splash = document.getElementById("splash");
+const splashText = document.getElementById("splash-text");
+const app = document.getElementById("app");
 const video = document.getElementById("webcam");
-const canvas = document.getElementById("overlay");
-const ctx = canvas.getContext("2d");
-const statusEl = document.getElementById("status");
-const debugEl = document.getElementById("debug");
 const testBtn = document.getElementById("test-btn");
-const memePane = document.querySelector(".meme-pane");
+const memePane = document.getElementById("meme-pane");
 const memeVideo = document.getElementById("meme-video");
 
 let handLandmarker = null;
-let rightWristHistory = []; // { t, x, y }
-let gestureStartTime = null;
-let lastTriggerTime = -Infinity;
+let rightWristHistory = []; // { t, x, y } — the user's actual right wrist
+let lastDySign = 0;
+let reversalTimestamps = [];
+let gestureSince = null; // when the gesture-active condition most recently started being true
+let gestureUntil = null; // when it most recently stopped being true
+let manualActiveUntil = -Infinity;
 
-function playMeme() {
-  memePane.classList.add("playing");
-  memeVideo.currentTime = 0;
-  memeVideo.play();
-}
-
-memeVideo.addEventListener("ended", () => memePane.classList.remove("playing"));
-testBtn.addEventListener("click", playMeme);
+testBtn.addEventListener("click", () => {
+  manualActiveUntil = performance.now() + MANUAL_ACTIVE_MS;
+});
 
 function isInFaceZone(landmark) {
   return (
@@ -42,78 +58,83 @@ function isInFaceZone(landmark) {
   );
 }
 
-function updateScoopDistance(wrist, now) {
+function updateScoop(wrist, now) {
   rightWristHistory.push({ t: now, x: wrist.x, y: wrist.y });
   rightWristHistory = rightWristHistory.filter((p) => now - p.t <= SCOOP_WINDOW_MS);
+  reversalTimestamps = reversalTimestamps.filter((t) => now - t <= SCOOP_WINDOW_MS);
 
-  let total = 0;
+  let distance = 0;
   for (let i = 1; i < rightWristHistory.length; i++) {
     const a = rightWristHistory[i - 1];
     const b = rightWristHistory[i];
-    total += Math.hypot(b.x - a.x, b.y - a.y);
-  }
-  return total;
-}
+    distance += Math.hypot(b.x - a.x, b.y - a.y);
 
-function drawLandmarks(handsLandmarks) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  for (const landmarks of handsLandmarks) {
-    for (const lm of landmarks) {
-      ctx.beginPath();
-      ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "#4f7cff";
-      ctx.fill();
+    const dy = b.y - a.y;
+    if (Math.abs(dy) > SCOOP_REVERSAL_EPSILON) {
+      const sign = Math.sign(dy);
+      if (lastDySign !== 0 && sign !== lastDySign) {
+        reversalTimestamps.push(b.t);
+      }
+      lastDySign = sign;
     }
   }
+
+  return { distance, reversals: reversalTimestamps.length };
 }
 
 function processResult(result, now) {
   const hands = result.handednesses;
   const landmarksList = result.landmarks;
 
-  drawLandmarks(landmarksList);
-
   let leftNearFace = false;
   let scoopDistance = 0;
+  let scoopReversals = 0;
+  const seenLabels = [];
 
   for (let i = 0; i < hands.length; i++) {
-    const label = hands[i][0]?.categoryName; // "Left" or "Right", subject-relative
-    const landmarks = landmarksList[i];
-    const wrist = landmarks[0];
+    const label = hands[i][0]?.categoryName;
+    const wrist = landmarksList[i][0];
+    seenLabels.push(`${label}@(${wrist.x.toFixed(2)},${wrist.y.toFixed(2)})`);
 
-    if (label === "Left" && isInFaceZone(wrist)) {
+    if (label === ACTUAL_LEFT_HAND_LABEL && isInFaceZone(wrist)) {
       leftNearFace = true;
     }
-    if (label === "Right") {
-      scoopDistance = updateScoopDistance(wrist, now);
+    if (label === ACTUAL_RIGHT_HAND_LABEL) {
+      const scoop = updateScoop(wrist, now);
+      scoopDistance = scoop.distance;
+      scoopReversals = scoop.reversals;
     }
   }
 
-  const scooping = scoopDistance > SCOOP_DISTANCE_THRESHOLD;
-  debugEl.textContent = `face-zone: ${leftNearFace ? "yes" : "no"} · scoop: ${scoopDistance.toFixed(2)}`;
+  const scooping = scoopDistance > SCOOP_DISTANCE_THRESHOLD && scoopReversals >= 1;
+  const rawActive = (leftNearFace && scooping) || now < manualActiveUntil;
 
-  const cooldownActive = now - lastTriggerTime < COOLDOWN_MS;
+  if (debugEl) {
+    debugEl.textContent =
+      `hands: ${seenLabels.join(" | ") || "none"}\n` +
+      `face-zone (${ACTUAL_LEFT_HAND_LABEL}): ${leftNearFace}\n` +
+      `scoop (${ACTUAL_RIGHT_HAND_LABEL}): dist=${scoopDistance.toFixed(3)} reversals=${scoopReversals} -> ${scooping}\n` +
+      `active: ${rawActive}`;
+  }
 
-  if (leftNearFace && scooping && !cooldownActive) {
-    if (gestureStartTime === null) gestureStartTime = now;
-    const held = now - gestureStartTime;
-    if (held >= HOLD_DURATION_MS) {
-      statusEl.textContent = "Scuba Cat incoming! 🐱";
-      lastTriggerTime = now;
-      gestureStartTime = null;
-      playMeme();
-    } else {
-      statusEl.textContent = `Detecting... ${Math.round(held)}/${HOLD_DURATION_MS}ms`;
-    }
+  // Track continuous true/false spans so a brief flicker doesn't toggle the cat on and off.
+  if (rawActive) {
+    if (gestureSince === null) gestureSince = now;
+    gestureUntil = null;
   } else {
-    gestureStartTime = null;
-    if (cooldownActive) {
-      statusEl.textContent = "Nice! Cooling down...";
-    } else if (hands.length < 2) {
-      statusEl.textContent = "Show both hands";
-    } else {
-      statusEl.textContent = "Ready — left hand near face, right hand scooping";
-    }
+    if (gestureUntil === null) gestureUntil = now;
+    gestureSince = null;
+  }
+
+  const sustainedActive = gestureSince !== null && now - gestureSince >= START_GRACE_MS;
+  const sustainedInactive = gestureUntil !== null && now - gestureUntil >= STOP_GRACE_MS;
+
+  if (sustainedActive && memeVideo.paused) {
+    memeVideo.play();
+    memePane.classList.add("active");
+  } else if (sustainedInactive && !memeVideo.paused) {
+    memeVideo.pause();
+    memePane.classList.remove("active");
   }
 }
 
@@ -133,8 +154,6 @@ async function setupCamera() {
   });
   video.srcObject = stream;
   await new Promise((resolve) => (video.onloadedmetadata = resolve));
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
 }
 
 async function setupHandLandmarker() {
@@ -154,11 +173,12 @@ async function setupHandLandmarker() {
 async function main() {
   try {
     await Promise.all([setupCamera(), setupHandLandmarker()]);
-    statusEl.textContent = "Ready — left hand near face, right hand scooping";
+    splash.hidden = true;
+    app.hidden = false;
     renderLoop();
   } catch (err) {
     console.error(err);
-    statusEl.textContent = "Couldn't start webcam/hand tracking — check camera permission.";
+    splashText.textContent = "Couldn't start the webcam — check camera permission and reload.";
   }
 }
 
